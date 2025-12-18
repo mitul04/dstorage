@@ -4,7 +4,7 @@ import 'package:web3dart/web3dart.dart';
 
 class BlockchainService {
   // Android Emulator -> Physical device
-  static const String _baseIp = "10.8.1.84";
+  static const String _baseIp = "192.168.31.48"; // run `ipconfig` to find your local IP
 
   final String _rpcUrl = "http://$_baseIp:9545"; 
   final String _wsUrl = "ws://$_baseIp:9545"; 
@@ -30,7 +30,7 @@ class BlockchainService {
 
   Future<void> _loadContract() async {
     String abi = await rootBundle.loadString("assets/abi.json");
-    String contractAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // Check this!
+    String contractAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"; // Use the FileRegistry address from your Daemon logs!
 
     _contract = DeployedContract(
       ContractAbi.fromJson(abi, "FileRegistry"),
@@ -43,7 +43,7 @@ class BlockchainService {
     return balance.getValueInUnit(EtherUnit.ether).toStringAsFixed(6);
   }
 
-Future<String?> uploadFileToStorage(String filePath, String fileName) async {
+  Future<String?> uploadFileToStorage(String filePath, String fileName) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse(_storageUrl));
       request.files.add(await http.MultipartFile.fromPath('file', filePath, filename: fileName));
@@ -89,6 +89,40 @@ Future<String?> uploadFileToStorage(String filePath, String fileName) async {
       print("🎉 Blockchain Transaction Complete!");
     } catch (e) {
       print("❌ Blockchain Error: $e");
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUserFiles() async {
+    try {
+      final function = _contract.function('getMyFiles');
+      
+      // Call the function (READ only, so no gas fees)
+      final result = await _client.call(
+        contract: _contract,
+        function: function,
+        params: [],
+        sender: _ownAddress,
+      );
+
+      // The result is a List containing one item: the List of Files.
+      // Structure: [[ [file1_data], [file2_data] ]]
+      List<dynamic> rawFiles = result[0];
+
+      return rawFiles.map((fileData) {
+        return {
+          'owner': fileData[0].toString(),
+          'cid': fileData[1].toString(),
+          'fileName': fileData[2].toString(),
+          'fileType': fileData[3].toString(),
+          // fileData[4] is hosts (skipped for now)
+          'fileSize': fileData[5].toString(),
+          'timestamp': fileData[6].toString(),
+        };
+      }).toList();
+      
+    } catch (e) {
+      print("❌ Error fetching files: $e");
+      return [];
     }
   }
 }
