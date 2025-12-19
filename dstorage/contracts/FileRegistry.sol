@@ -10,6 +10,7 @@ contract FileRegistry {
         address[] hosts;        
         uint256 fileSize;       
         uint256 timestamp;
+        uint256 targetReplication;
     }
 
     mapping(string => File) private fileMap;
@@ -24,7 +25,8 @@ contract FileRegistry {
         string memory _fileName,
         string memory _fileType,
         uint256 _fileSize,
-        address[] calldata _hosts
+        address[] calldata _hosts,
+        uint256 _targetReplication
     ) external {
         require(fileMap[_cid].owner == address(0), "File already exists");
 
@@ -35,7 +37,8 @@ contract FileRegistry {
             fileType: _fileType,
             hosts: _hosts,
             fileSize: _fileSize,
-            timestamp: block.timestamp
+            timestamp: block.timestamp,
+            targetReplication: _targetReplication
         });
 
         // 2. NEW: Add this CID to the user's list
