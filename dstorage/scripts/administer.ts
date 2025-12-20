@@ -25,9 +25,10 @@ async function main() {
   const allNodeAddresses = await registry.getAllNodes();
   
   console.log(`\nFound ${allNodeAddresses.length} Registered Nodes`);
-  console.log("========================================================================================");
-  console.log("IP ADDRESS           | CAPACITY (Free/Total) | REP | STATUS     | LAST SEEN");
-  console.log("----------------------------------------------------------------------------------------");
+  console.log("=".repeat(130)); // Wider separator
+  // Added "NODE ADDRESS" column
+  console.log("NODE ADDRESS                               | IP ADDRESS                | CAPACITY (Free/Total) | REP | STATUS     | LAST SEEN");
+  console.log("-".repeat(130));
 
   let totalNetworkStorage = 0;
 
@@ -53,15 +54,16 @@ async function main() {
       const dateStr = new Date(lastSeenSeconds * 1000).toLocaleTimeString();
 
       // D. Format Columns
+      const addr = nodeAddr; // The Ethereum Address
       const ip = profile.ipAddress.padEnd(20);
       const cap = `${freeGB.toFixed(0)}/${totalGB.toFixed(0)} GB`.padEnd(21);
       const rep = `${profile.reputation}`.padEnd(3);
       const stat = status.padEnd(10);
       
-      console.log(`${ip} | ${cap} | ${rep} | ${stat} | ${dateStr}`);
+      console.log(`${addr} | ${ip} | ${cap} | ${rep} | ${stat} | ${dateStr}`);
   }
 
-  console.log("========================================================================================");
+  console.log("=".repeat(130));
   console.log(`🌍 TOTAL NETWORK CAPACITY: ${totalNetworkStorage.toFixed(2)} GB`);
 }
 
