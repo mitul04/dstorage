@@ -41,12 +41,17 @@ class _MainLayoutState extends State<MainLayout> {
   const UploadScreen(),
   const FilesScreen(),
   const Center(child: Text("Profile")),
-];
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(child: _screens[_selectedIndex]),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: _screens,
+        ),
+      ),
       bottomNavigationBar: Container(
         color: Colors.white,
         child: Padding(
