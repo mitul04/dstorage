@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For Clipboard
-import 'package:intl/intl.dart'; // Add intl package to pubspec.yaml
 import '../services/blockchain_service.dart';
 
 class FilesScreen extends StatefulWidget {
