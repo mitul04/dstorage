@@ -66,7 +66,7 @@ async function main() {
   // This creates the Bridge so you don't have to copy-paste IPs manually
   const mobileConfig = {
     serverIp: serverIp,
-    rpcUrl: `http://${serverIp}:8545`, // Hardhat default port
+    rpcUrl: `http://${serverIp}:9545`,
     fileRegistry: fileRegistryAddress,
     nodeRegistry: nodeRegistryAddress
   };
