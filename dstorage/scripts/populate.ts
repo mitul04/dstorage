@@ -26,10 +26,38 @@ async function main() {
 
   console.log(`\n💰 Distributing Stimulus Packages (Funding ${ghosts.length} nodes)...`);
 
+  console.log(`\n👑 REGISTERING "THE BOSS" (Your Real Laptop)...`);
+
+  // --- STEP 4: REGISTER THE REAL LAPTOP (Node #1) ---
+
+  const realIp = `http://${addresses.serverIp}:3000`;
+  const realCapacity = BigInt(500) * BigInt(1024 ** 3); // 500 GB
+
+  try {
+    const profile = await registry.nodes(deployer.address);
+    if (profile.isRegistered) {
+      console.log(`   ✅ Boss already registered at ${profile.ipAddress}`);
+    } else {
+      // Deployer owns all tokens, so no need to transfer. Just Approve.
+      console.log(`   📝 Approving Stake...`);
+      const approveTx = await token.approve(addresses.storageNodeRegistry, stakeAmount);
+      await approveTx.wait();
+
+      console.log(`   📝 Registering Real IP: ${realIp}...`);
+      const regTx = await registry.registerNode(realIp, realCapacity, false); // false = PC
+      await regTx.wait();
+      console.log(`   🚀 SUCCESS! Your laptop is Node #0.`);
+    }
+  } catch (e) {
+    console.log(`   ❌ Failed to register Boss: ${e}`);
+  }
+
+  console.log(`\n👻 RELEASING THE GHOSTS (Populating Accounts 1-${ghosts.length})...`);
+
   // 4. The "Ghost" Loop
   for (let i = 0; i < ghosts.length; i++) {
     const ghost = ghosts[i];
-    const ghostIp = `/ip4/192.168.0.${100 + i}/tcp/4001`; // Fake IP
+    const ghostIp = `http://192.168.0.${101 + i}:3000`; // Fake IP
     const isMobile = i % 3 === 0; // Every 3rd node is mobile
     
     // Randomize Capacity between 100GB and 1TB
