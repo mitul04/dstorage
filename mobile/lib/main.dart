@@ -4,6 +4,7 @@ import 'package:google_nav_bar/google_nav_bar.dart';
 import 'screens/home_screen.dart';
 import 'screens/upload_screen.dart';
 import 'screens/files_screen.dart';
+import 'screens/rewards_screen.dart';
 
 void main() {
   runApp(const DecloudApp());
@@ -40,16 +41,30 @@ class _MainLayoutState extends State<MainLayout> {
   const HomeScreen(),
   const UploadScreen(),
   const FilesScreen(),
-  const Center(child: Text("Profile")),
+  const RewardsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: _screens,
+        // 🔄 HYBRID STACK: Combines persistence with auto-refresh
+        child: Stack(
+          children: [
+            // 1. Persistent Upload Screen
+            // It is ALWAYS in the widget tree, just hidden when not in use.
+            // This prevents the "State" from being destroyed during uploads.
+            Offstage(
+              offstage: _selectedIndex != 1, // Only visible when Index is 1
+              child: const UploadScreen(),
+            ),
+
+            // 2. Auto-Refreshing Screens (Home, Files, Rewards)
+            // These are created brand new every time you switch to them.
+            // This triggers 'initState', causing them to fetch fresh data instantly.
+            if (_selectedIndex != 1) 
+              _screens[_selectedIndex],
+          ],
         ),
       ),
       bottomNavigationBar: Container(
@@ -68,7 +83,7 @@ class _MainLayoutState extends State<MainLayout> {
               GButton(icon: Icons.home_rounded, text: 'Home'),
               GButton(icon: Icons.cloud_upload_rounded, text: 'Upload'),
               GButton(icon: Icons.folder_open_rounded, text: 'Files'),
-              GButton(icon: Icons.person_rounded, text: 'Profile'),
+              GButton(icon: Icons.savings_rounded, text: 'Rewards'),
             ],
           ),
         ),
