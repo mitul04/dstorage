@@ -16,9 +16,13 @@ class BlockchainService {
   late Web3Client _client;
   late Credentials _credentials;
   late EthereumAddress _ownAddress;
-  
+
+  // Contracts
   late DeployedContract _fileContract; 
-  late DeployedContract _nodeContract; 
+  late DeployedContract _nodeContract;
+  
+  // 🆕 Store the Token ABI Definition here (but not the contract instance yet, as address is dynamic)
+  late ContractAbi _rewardTokenAbiDefinition;
 
   // --- CACHE: BALANCE ---
   Future<void> _cacheBalance(String balance) async {
@@ -102,7 +106,7 @@ class BlockchainService {
 
   Future<void> _loadContracts() async {
     // --- CONTRACT 1: FILE REGISTRY ---
-    String fileAbi = await rootBundle.loadString("assets/abi.json");
+    String fileAbi = await rootBundle.loadString("assets/file_registry_abi.json");
     _fileContract = DeployedContract(
       ContractAbi.fromJson(fileAbi, "FileRegistry"),
       EthereumAddress.fromHex(_fileAddr), // Use dynamic address
@@ -114,6 +118,51 @@ class BlockchainService {
       ContractAbi.fromJson(nodeAbi, "StorageNodeRegistry"),
       EthereumAddress.fromHex(_nodeAddr), // Use dynamic address
     );
+
+    // --- CONTRACT 3: REWARD TOKEN ABI (Prepare it for later use)
+    String tokenAbiString = await rootBundle.loadString("assets/reward_token_abi.json");
+    _rewardTokenAbiDefinition = ContractAbi.fromJson(tokenAbiString, "RewardToken");
+  }
+
+  Future<String> getRewardTokenBalance() async {
+    try {
+      // 1. Get Token Address from NodeRegistry (Source of Truth)
+      // We ask the NodeRegistry "Which token are you using?"
+      final tokenFunc = _nodeContract.function('token');
+      final result = await _client.call(
+        contract: _nodeContract,
+        function: tokenFunc,
+        params: [],
+      );
+      
+      final EthereumAddress tokenAddress = result[0] as EthereumAddress;
+      
+      // 2. Call balanceOf on that address
+      // 2. Create the Contract Object dynamically using the loaded ABI
+      final tokenContract = DeployedContract(
+        _rewardTokenAbiDefinition, // 👈 USE LOADED ABI HERE
+        tokenAddress
+      );
+
+      final balanceFunc = tokenContract.function('balanceOf');
+
+      final balanceResult = await _client.call(
+        contract: tokenContract,
+        function: balanceFunc,
+        params: [_ownAddress],
+      );
+
+      final balanceBigInt = balanceResult.first as BigInt;
+      
+      // Convert Wei (18 decimals) to Human Readable Number
+      // e.g. 1250000000000000000000 -> 1250.00
+      double balance = balanceBigInt / BigInt.from(10).pow(18);
+      return balance.toStringAsFixed(2);
+
+    } catch (e) {
+      print("⚠️ Failed to load token balance: $e");
+      return "0.00";
+    }
   }
 
   // --- READ: Fetch Files ---
