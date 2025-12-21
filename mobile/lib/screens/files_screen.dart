@@ -241,9 +241,6 @@ class _FilesScreenState extends State<FilesScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _refresh),
-        ],
       ),
       // LOGIC: If loading AND no cache, show spinner. Otherwise show list.
       body: _isLoading && _files.isEmpty
