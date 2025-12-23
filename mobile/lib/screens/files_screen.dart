@@ -1,7 +1,10 @@
+import 'dart:io'; // Needed for File type
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For Clipboard
+import 'package:flutter/services.dart'; 
 import '../services/blockchain_service.dart';
 import '../services/encryption_service.dart';
+import '../services/storage_service.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
@@ -13,36 +16,50 @@ class FilesScreen extends StatefulWidget {
 class _FilesScreenState extends State<FilesScreen> {
   final BlockchainService _service = BlockchainService();
   final EncryptionService _encryptionService = EncryptionService();
+  final StorageService _storageService = StorageService(); // 👈 Init Storage Service
+
+  String? _gatewayUrl;
   
-  // STATE: We use a List now, not a Future, to allow instant updates
   List<Map<String, dynamic>> _files = [];
   bool _isLoading = true;
 
   @override
   void initState() {
-    super.initState();
+    super.initState();  
     _initAndLoad();
   }
 
   Future<void> _initAndLoad() async {
-    // 1. Load Cache IMMEDIATELY (Instant UI)
+    // 2. Load Config FIRST to get the Gateway IP
+    try {
+      final String configString = await rootBundle.loadString('assets/app_config.json');
+      final Map<String, dynamic> config = jsonDecode(configString);
+      
+      // We assume your Node is running on Port 3000 on the same IP as the server
+      if (config.containsKey('serverIp')) {
+        setState(() {
+          _gatewayUrl = "http://${config['serverIp']}:3000";
+        });
+        print("🌍 Gateway Configured: $_gatewayUrl");
+      }
+    } catch (e) {
+      print("❌ Config Load Error: $e");
+    }
+
+    // 1. Load Cache
     final cached = await _service.getCachedFiles();
-    // Sort Cached Files too
     _sortFiles(cached);
     
     if (mounted) {
       setState(() {
         _files = cached;
-        // If we have cached data, stop the spinner immediately
         if (_files.isNotEmpty) _isLoading = false; 
       });
     }
 
-    // 2. Load Network in Background (Updates UI later)
+    // 2. Load Network
     await _service.init();
     final fresh = await _service.fetchUserFiles();
-
-    // 🔽 SORTING LOGIC: Newest (b) to Oldest (a)
     _sortFiles(fresh);
 
     if (mounted) {
@@ -53,23 +70,19 @@ class _FilesScreenState extends State<FilesScreen> {
     }
   }
 
-  // Helper to sort list in-place
   void _sortFiles(List<Map<String, dynamic>> fileList) {
     fileList.sort((a, b) {
        int timeA = int.tryParse(a['timestamp']) ?? 0;
        int timeB = int.tryParse(b['timestamp']) ?? 0;
-       return timeB.compareTo(timeA); // Descending order
+       return timeB.compareTo(timeA); 
     });
   }
 
   void _refresh() {
-    setState(() {
-      _isLoading = true; // Show spinner while refreshing manually
-    });
+    setState(() => _isLoading = true);
     _initAndLoad();
   }
 
-  // --- HELPER: Format Bytes to MB ---
   String _formatSize(String sizeStr) {
     int bytes = int.tryParse(sizeStr) ?? 0;
     if (bytes < 1024) return '$bytes B';
@@ -77,19 +90,15 @@ class _FilesScreenState extends State<FilesScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  // --- HELPER: Format Timestamp (UPDATED WITH TIME) ---
   String _formatDate(String timestamp) {
     if (timestamp == "0") return "Unknown";
     var dt = DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp) * 1000);
-    
-    // Add leading zero for minutes (e.g., 14:05 instead of 14:5)
     String hour = dt.hour.toString().padLeft(2, '0');
     String minute = dt.minute.toString().padLeft(2, '0');
-
     return "${dt.day}/${dt.month}/${dt.year} at $hour:$minute";
   }
 
-  // --- ACTION: Show Full Details ---
+  // --- ACTION: Show Full Details (Updated with Download) ---
   void _showFileDetails(Map<String, dynamic> file) {
     showModalBottomSheet(
       context: context,
@@ -101,6 +110,7 @@ class _FilesScreenState extends State<FilesScreen> {
         List<dynamic> hosts = file['hosts'] ?? [];
         String targetRep = file['targetReplication'].toString();
         String cid = file['cid'];
+        String fileName = file['fileName'];
 
         return Padding(
           padding: const EdgeInsets.all(24.0),
@@ -108,16 +118,20 @@ class _FilesScreenState extends State<FilesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
               Center(child: Container(width: 40, height: 4, color: Colors.grey[300])),
               const SizedBox(height: 20),
-              Text(
-                file['fileName'], 
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              
+              // Filename
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Text(
+                  fileName, 
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
+              ),
               const SizedBox(height: 10),
               
-              // 1. CID Section
+              // CID Box
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
@@ -142,21 +156,18 @@ class _FilesScreenState extends State<FilesScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-
+              
+              // Decryption Key Box (Hidden if not encrypted)
               FutureBuilder<String?>(
-                future: _encryptionService.getKeyForCid(cid), // Look for key
+                future: _encryptionService.getKeyForCid(cid),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData || snapshot.data == null) {
-                    return const SizedBox.shrink(); // Hide if no key found (unencrypted file)
-                  }
-                  
+                  if (!snapshot.hasData || snapshot.data == null) return const SizedBox.shrink();
                   final String key = snapshot.data!;
                   return Container(
                     margin: const EdgeInsets.only(top: 10),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.1), // Amber to signify "Secret"
+                      color: Colors.amber.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.amber.withOpacity(0.3))
                     ),
@@ -190,20 +201,19 @@ class _FilesScreenState extends State<FilesScreen> {
                   );
                 },
               ),
-              // 🔼 END NEW SECTION
 
               const SizedBox(height: 20),
 
-              // 2. Replication Health
+              // Network Status
               Text("Network Status (${hosts.length}/$targetRep Nodes)", 
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6C63FF))),
               const SizedBox(height: 8),
               
-              // 3. List of Hosts (Addresses)
               hosts.isEmpty 
                   ? const Text("⚠️ No active hosts reported.", style: TextStyle(color: Colors.orange))
                   : ListView.builder(
-                      shrinkWrap: true, // Vital for BottomSheet
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
                       itemCount: hosts.length,
                       itemBuilder: (context, index) {
                         return ListTile(
@@ -216,13 +226,57 @@ class _FilesScreenState extends State<FilesScreen> {
                     ),
 
               const SizedBox(height: 20),
+              
+              // 🔽 DOWNLOAD & VIEW BUTTON (Connects to StorageService)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
+                  onPressed: () async {
+                    // 1. Check if we already have it (Cache)
+                    File? file = await _storageService.getCachedFile(cid, fileName);
+
+                    if (file == null) {
+                       // 2. If not, Download from Network
+                       Navigator.pop(context); // Close sheet to show snackbar clearly
+                       ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(content: Text("⬇️ Cache miss. Downloading from decentralized network..."), duration: Duration(seconds: 1))
+                       );
+                       
+                       // Perform Download
+                       file = await _storageService.downloadFile(cid, fileName, _gatewayUrl!);
+                    }
+
+                    // 3. Open File
+                    if (file != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("✅ File Ready: ${file.path.split('/').last}"))
+                      );
+                      await _storageService.openFile(file);
+                    } else {
+                       ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(content: Text("❌ Failed to retrieve file from Gateway."))
+                       );
+                    }
+                  },
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text("Download & View"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6C63FF), 
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                ),
+              ),
+              // 🔼 END BUTTON
+
+              const SizedBox(height: 10),
+              
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.check),
-                  label: const Text("Close"),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6C63FF), foregroundColor: Colors.white),
+                  child: const Text("Close"),
                 ),
               ),
               const SizedBox(height: 20),
@@ -235,6 +289,8 @@ class _FilesScreenState extends State<FilesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (Keep existing build method exactly as it was) ...
+    // Copying the build method from your provided code to ensure completeness
     return Scaffold(
       appBar: AppBar(
         title: const Text("My Cloud", style: TextStyle(color: Colors.black)),
@@ -242,7 +298,6 @@ class _FilesScreenState extends State<FilesScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
-      // LOGIC: If loading AND no cache, show spinner. Otherwise show list.
       body: _isLoading && _files.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : _files.isEmpty
@@ -257,26 +312,23 @@ class _FilesScreenState extends State<FilesScreen> {
                   ],
                 ),
               )
-            // ✅ ADDED: RefreshIndicator for Pull-to-Refresh
             : RefreshIndicator(
                 onRefresh: _initAndLoad,
                 color: const Color(0xFF6C63FF),
                 child: ListView.builder(
                   padding: const EdgeInsets.all(12),
-                  physics: const AlwaysScrollableScrollPhysics(), // Ensures swipe works even with few items
+                  physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: _files.length,
                   itemBuilder: (context, index) {
                     final file = _files[index];
-                    // Safe access with defaults
                     final List hosts = file['hosts'] ?? [];
                     final String targetRep = (file['targetReplication'] ?? "1").toString();
                     final int targetRepInt = int.tryParse(targetRep) ?? 1;
                     
-                    // Basic Image Preview URL
                     final String imageUrl = "https://ipfs.io/ipfs/${file['cid']}";
                     final bool isImage = file['fileName'].toString().toLowerCase().endsWith('jpg') || 
-                                           file['fileName'].toString().toLowerCase().endsWith('png') ||
-                                           file['fileName'].toString().toLowerCase().endsWith('jpeg');
+                                         file['fileName'].toString().toLowerCase().endsWith('png') ||
+                                         file['fileName'].toString().toLowerCase().endsWith('jpeg');
 
                     return Card(
                       elevation: 2,
@@ -289,90 +341,44 @@ class _FilesScreenState extends State<FilesScreen> {
                           padding: const EdgeInsets.all(12.0),
                           child: Row(
                             children: [
-                              // --- 1. THUMBNAIL / ICON ---
                               Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                                width: 60, height: 60,
+                                decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
                                 child: isImage
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Image.network(imageUrl, fit: BoxFit.cover,
-                                          errorBuilder: (c, o, s) => const Icon(Icons.broken_image, color: Colors.grey),
-                                          loadingBuilder: (c, w, e) => e == null ? w : const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2)),
-                                        ),
-                                      )
-                                    : const Icon(Icons.insert_drive_file, color: Color(0xFF6C63FF), size: 30),
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (c, o, s) => const Icon(Icons.broken_image, color: Colors.grey)))
+                                  : const Icon(Icons.insert_drive_file, color: Color(0xFF6C63FF), size: 30),
                               ),
-                              
                               const SizedBox(width: 16),
-                              
-                              // --- 2. DETAILS ---
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      file['fileName'],
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
+                                    Text(file['fileName'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                     const SizedBox(height: 4),
-                                    Text(
-                                      // ✅ UPDATED: Shows Date & Time
-                                      "${_formatSize(file['fileSize'])} • ${_formatDate(file['timestamp'])}",
-                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                                    ),
+                                    Text("${_formatSize(file['fileSize'])} • ${_formatDate(file['timestamp'])}", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                                     const SizedBox(height: 8),
-                                    
-                                    // --- 3. BADGES (Redundancy) ---
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: hosts.length >= targetRepInt ? Colors.green[50] : Colors.orange[50],
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(
-                                              color: hosts.length >= targetRepInt ? Colors.green : Colors.orange, 
-                                              width: 0.5
-                                            )
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(Icons.cloud_done, size: 12, 
-                                                color: hosts.length >= targetRepInt ? Colors.green : Colors.orange),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                "${hosts.length}/$targetRep Nodes",
-                                                style: TextStyle(
-                                                  fontSize: 10, fontWeight: FontWeight.bold,
-                                                  color: hosts.length >= targetRepInt ? Colors.green : Colors.orange
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                    Row(children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: hosts.length >= targetRepInt ? Colors.green[50] : Colors.orange[50],
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: hosts.length >= targetRepInt ? Colors.green : Colors.orange, width: 0.5)
                                         ),
-                                      ],
-                                    )
+                                        child: Row(children: [
+                                          Icon(Icons.cloud_done, size: 12, color: hosts.length >= targetRepInt ? Colors.green : Colors.orange),
+                                          const SizedBox(width: 4),
+                                          Text("${hosts.length}/$targetRep Nodes", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: hosts.length >= targetRepInt ? Colors.green : Colors.orange)),
+                                        ]),
+                                      ),
+                                    ]),
                                   ],
                                 ),
                               ),
-
-                              // --- 4. MORE MENU ---
                               PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'details') _showFileDetails(file);
-                                },
+                                onSelected: (value) { if (value == 'details') _showFileDetails(file); },
                                 itemBuilder: (BuildContext context) {
-                                  return [
-                                    const PopupMenuItem(value: 'details', child: Text('View Details')),
-                                    const PopupMenuItem(value: 'share', child: Text('Share Link')),
-                                  ];
+                                  return [ const PopupMenuItem(value: 'details', child: Text('View Details')), const PopupMenuItem(value: 'share', child: Text('Share Link')) ];
                                 },
                               ),
                             ],
